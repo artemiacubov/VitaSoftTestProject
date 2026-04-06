@@ -180,7 +180,7 @@ onUnmounted(() => {
                 @click="goToUserDetail(user.id)"
             >
               <div class="user-info">
-                <span class="user-name">{{ user.blogName || user.fullName }}</span>
+                <span class="user-name">{{ user.fullName }}</span>
                 <span class="user-id">id: {{ user.id }}</span>
               </div>
               <button
