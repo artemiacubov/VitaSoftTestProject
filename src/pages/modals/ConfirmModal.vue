@@ -1,21 +1,3 @@
-<template>
-  <div v-if="visible" class="modal-overlay" @click.self="close">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h3>{{ titleText }}</h3>
-        <button class="close-btn" @click="close">✕</button>
-      </div>
-      <div class="modal-body">
-        <p>{{ messageText }}</p>
-      </div>
-      <div class="modal-footer">
-        <button class="cancel-btn" @click="close">Отмена</button>
-        <button class="confirm-btn" @click="confirm">Удалить</button>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref } from 'vue'
 
@@ -51,6 +33,24 @@ const confirm = () => {
 
 defineExpose({ open })
 </script>
+
+<template>
+  <div v-if="visible" class="modal-overlay" @click.self="close">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3>{{ titleText }}</h3>
+        <button class="close-btn" @click="close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>{{ messageText }}</p>
+      </div>
+      <div class="modal-footer">
+        <button class="cancel-btn" @click="close">Отмена</button>
+        <button class="confirm-btn" @click="confirm">Удалить</button>
+      </div>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .modal-overlay {
