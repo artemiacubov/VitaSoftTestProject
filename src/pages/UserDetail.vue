@@ -5,6 +5,8 @@ import { useUsers } from '@/composables/useUsers'
 import { createPost } from '@/service-api/api'
 import { Subscription } from 'rxjs'
 import type { IPost } from '@/type/api.type'
+import { formatDate, showMessage } from '@/service/helpers.ts'
+import { validateTitle, validateBriefDescription, validateFullDescription } from '@/service/validations.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,60 +19,45 @@ const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 const subscriptions = new Subscription()
 
+const currentPage = ref(1)
+const postsPerPage = ref(5)
+
 const goToNoteDetail = (postId: number) => {
   router.push(`/post/${postId}`)
 }
 
-// Валидация полей поста
+const goBack = () => {
+  router.push('/')
+}
+
 const postErrors = ref({
   title: '',
   briefDescription: '',
   fullDescription: ''
 })
 
-// Форма для нового поста
 const newPost = ref({
   title: '',
   briefDescription: '',
   fullDescription: ''
 })
 
-// Валидация заголовка
-const validateTitle = () => {
-  if (!newPost.value.title) {
-    postErrors.value.title = 'Заголовок обязателен'
-    return false
-  }
-  if (newPost.value.title.length > 50) {
-    postErrors.value.title = 'Заголовок не должен превышать 50 символов'
-    return false
-  }
-  postErrors.value.title = ''
-  return true
+const validateTitleField = () => {
+  const result = validateTitle(newPost.value.title)
+  postErrors.value.title = result.error
+  return result.isValid
 }
 
-// Валидация краткого описания
-const validateBriefDescription = () => {
-  if (!newPost.value.briefDescription) {
-    postErrors.value.briefDescription = 'Краткое описание обязательно'
-    return false
-  }
-  if (newPost.value.briefDescription.length > 100) {
-    postErrors.value.briefDescription = 'Краткое описание не должно превышать 100 символов'
-    return false
-  }
-  postErrors.value.briefDescription = ''
-  return true
+const validateBriefDescriptionField = () => {
+  const result = validateBriefDescription(newPost.value.briefDescription)
+  postErrors.value.briefDescription = result.error
+  return result.isValid
 }
 
-// Валидация полного описания
-const validateFullDescription = () => {
-  if (newPost.value.fullDescription.length > 255) {
-    postErrors.value.fullDescription = 'Полное описание не должно превышать 255 символов'
-    return false
-  }
-  postErrors.value.fullDescription = ''
-  return true
+const validateFullDescriptionField = () => {
+  const result = validateFullDescription(newPost.value.fullDescription)
+  postErrors.value.fullDescription = result.error
+  return result.isValid
 }
 
 const setUserId = () => {
@@ -80,22 +67,16 @@ const setUserId = () => {
   }
 }
 
-// Находим текущего пользователя
 const currentUser = computed(() => {
   return users.value.find(u => u.id === userId.value)
 })
 
-// Посты пользователя (отсортированные от новых к старым)
 const userPosts = computed<IPost[]>(() => {
   if (!currentUser.value?.post) return []
   return [...currentUser.value.post].sort((a, b) =>
       new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime()
   )
 })
-
-// Пагинация
-const currentPage = ref(1)
-const postsPerPage = ref(5)
 
 const paginatedPosts = computed(() => {
   const start = (currentPage.value - 1) * postsPerPage.value
@@ -130,55 +111,13 @@ const visiblePages = computed(() => {
   return range
 })
 
-// Форматирование даты
-const formatDate = (dateString: string) => {
-  if (!dateString) return 'Дата не указана'
-
-  const date = new Date(dateString)
-  const now = new Date()
-  const timezoneOffset = now.getTimezoneOffset() * 60 * 1000
-  const localDate = new Date(date.getTime() + timezoneOffset)
-  const localNow = new Date(now.getTime() + timezoneOffset)
-
-  const today = new Date(localNow.getFullYear(), localNow.getMonth(), localNow.getDate())
-  const postDate = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate())
-
-  const diffTime = today.getTime() - postDate.getTime()
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
-
-  if (diffDays === 0) {
-    return `Сегодня в ${localDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
-  }
-  if (diffDays === 1) {
-    return `Вчера в ${localDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
-  }
-
-  return localDate.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-// Показать сообщение
-const showMessage = (text: string, type: 'success' | 'error') => {
-  message.value = text
-  messageType.value = type
-  setTimeout(() => {
-    if (message.value === text) message.value = ''
-  }, 3000)
-}
-
-// Добавление поста с валидацией
 const addPost = () => {
-  const isTitleValid = validateTitle()
-  const isBriefValid = validateBriefDescription()
-  const isFullValid = validateFullDescription()
+  const isTitleValid = validateTitleField()
+  const isBriefValid = validateBriefDescriptionField()
+  const isFullValid = validateFullDescriptionField()
 
   if (!isTitleValid || !isBriefValid || !isFullValid) {
-    showMessage('Пожалуйста, исправьте ошибки в форме', 'error')
+    showMessage(message, messageType,'Пожалуйста, исправьте ошибки в форме', 'error')
     return
   }
 
@@ -190,7 +129,7 @@ const addPost = () => {
     fullDescription: newPost.value.fullDescription
   }).subscribe({
     next: () => {
-      showMessage('Пост успешно добавлен!', 'success')
+      showMessage(message, messageType,'Пост успешно добавлен!', 'success')
       newPost.value = {
         title: '',
         briefDescription: '',
@@ -201,7 +140,7 @@ const addPost = () => {
       creating.value = false
     },
     error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось добавить пост'}`, 'error')
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось добавить пост'}`, 'error')
       creating.value = false
     }
   })
@@ -209,15 +148,16 @@ const addPost = () => {
   subscriptions.add(sub)
 }
 
-// Переход назад
-const goBack = () => {
-  router.push('/')
-}
-
 watch(() => route.params.userId, () => {
   setUserId()
   currentPage.value = 1
 }, { immediate: true })
+
+watch(users, (newUsers) => {
+  if (userId.value !== 0 && !newUsers.find(u => u.id === userId.value)) {
+    router.push('/')
+  }
+}, { deep: true })
 
 onMounted(() => {
   setUserId()
@@ -249,7 +189,6 @@ onUnmounted(() => {
       <button @click="goBack" class="back-home-btn">Вернуться на главную</button>
     </div>
 
-    <!-- Форма добавления поста -->
     <div class="add-post-section">
       <h2>📝 Добавить запись</h2>
       <form @submit.prevent="addPost" class="add-post-form">
@@ -292,7 +231,6 @@ onUnmounted(() => {
       </form>
     </div>
 
-    <!-- Список постов -->
     <div class="posts-section">
       <h2>📖 Записи блога</h2>
 
@@ -329,7 +267,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Пагинация -->
       <div v-if="totalPages > 1" class="pagination">
         <button
             @click="currentPage--"

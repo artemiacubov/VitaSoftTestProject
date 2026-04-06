@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import { createUser, deleteUserById } from '@/service-api/api'
 import { Subscription } from 'rxjs'
 import { useUsers } from '@/composables/useUsers'
+import ConfirmModal from '@/pages/modals/ConfirmModal.vue'
 
 const router = useRouter()
 
-// Используем общее состояние
 const { users, refreshUsers, loadUsers } = useUsers()
 
 const isCollapsed = ref(true)
@@ -18,6 +18,8 @@ const newUser = ref({ blogName: '', fullName: '' })
 const deletingIds = ref<Set<number>>(new Set())
 const subscriptions = new Subscription()
 const isMobile = ref(false)
+
+const confirmModal = ref<InstanceType<typeof ConfirmModal> | null>(null)
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768
@@ -58,8 +60,13 @@ const addUser = () => {
   subscriptions.add(sub)
 }
 
-const deleteUser = (id: number) => {
-  if (!confirm(`Удалить пользователя с ID ${id}?`)) return
+const deleteUser = async (id: number) => {
+  const confirmed = await confirmModal.value?.open(
+      'Подтверждение удаления',
+      `Вы уверены, что хотите удалить пользователя с ID ${id}? Это действие нельзя отменить.`
+  )
+
+  if (!confirmed) return
 
   deletingIds.value.add(id)
   const sub = deleteUserById(id).subscribe({
@@ -80,7 +87,6 @@ const togglePanel = () => {
   isCollapsed.value = !isCollapsed.value
 }
 
-// Закрыть панель при клике вне её
 const handleClickOutside = (event: MouseEvent) => {
   if (isCollapsed.value) return
 
@@ -100,7 +106,6 @@ const handleResize = () => {
   }
 }
 
-// Блокировка скролла body при открытой панели
 watch(isCollapsed, (newVal) => {
   if (!newVal) {
     document.body.style.overflow = 'hidden'
@@ -204,6 +209,8 @@ onUnmounted(() => {
           @click="togglePanel"
       ></div>
     </Transition>
+
+    <ConfirmModal ref="confirmModal" />
   </div>
 </template>
 

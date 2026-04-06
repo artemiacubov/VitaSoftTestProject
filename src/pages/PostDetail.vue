@@ -4,9 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { getPostById, createComment, editPost, deletePostById, deleteCommentById } from '@/service-api/api'
 import { Subscription } from 'rxjs'
 import type { IPost, IComment } from '@/type/api.type'
+import { formatDate, showMessage } from '@/service/helpers.ts'
+import { validateCommentUserInfo, validateCommentEmail, validateCommentText } from '@/service/validations.ts'
+import ConfirmModal from "@/pages/modals/ConfirmModal.vue";
+import {useUsers} from "@/composables/useUsers.ts";
 
 const route = useRoute()
 const router = useRouter()
+const { users } = useUsers()
 
 const postId = ref<number>(Number(route.params.postId))
 const post = ref<IPost | null>(null)
@@ -19,25 +24,24 @@ const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 const subscriptions = new Subscription()
 
+const confirmModal = ref<InstanceType<typeof ConfirmModal> | null>(null)
+
 const goToUser = () => {
   if (post.value?.userInfoId) {
     router.push(`/user/${post.value.userInfoId}`)
   }
 }
 
-// Переход назад
 const goBack = () => {
   router.push('/')
 }
 
-// Форма для нового комментария
 const newComment = ref<Omit<IComment, 'dateTime' | 'id'>>({
   email: '',
   textComment: '',
   userInfo: ''
 })
 
-// Форма для редактирования поста
 const editForm = ref({
   title: '',
   briefDescription: '',
@@ -50,48 +54,24 @@ const commentErrors = ref({
   textComment: ''
 })
 
-// Форматирование даты
-const formatDate = (dateString: string) => {
-  if (!dateString) return 'Дата не указана'
-
-  const date = new Date(dateString)
-  const now = new Date()
-  const timezoneOffset = now.getTimezoneOffset() * 60 * 1000
-  const localDate = new Date(date.getTime() + timezoneOffset)
-  const localNow = new Date(now.getTime() + timezoneOffset)
-
-  const today = new Date(localNow.getFullYear(), localNow.getMonth(), localNow.getDate())
-  const postDate = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate())
-
-  const diffTime = today.getTime() - postDate.getTime()
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
-
-  if (diffDays === 0) {
-    return `Сегодня в ${localDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
-  }
-  if (diffDays === 1) {
-    return `Вчера в ${localDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
-  }
-
-  return localDate.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+const validateCommentUserInfoField = () => {
+  const result = validateCommentUserInfo(newComment.value.userInfo || '')
+  commentErrors.value.userInfo = result.error
+  return result.isValid
 }
 
-// Показать сообщение
-const showMessage = (text: string, type: 'success' | 'error') => {
-  message.value = text
-  messageType.value = type
-  setTimeout(() => {
-    if (message.value === text) message.value = ''
-  }, 3000)
+const validateCommentEmailField = () => {
+  const result = validateCommentEmail(newComment.value.email)
+  commentErrors.value.email = result.error
+  return result.isValid
 }
 
-// Загрузка поста
+const validateCommentTextField = () => {
+  const result = validateCommentText(newComment.value.textComment)
+  commentErrors.value.textComment = result.error
+  return result.isValid
+}
+
 const loadPost = () => {
   loading.value = true
   const sub = getPostById(postId.value).subscribe({
@@ -99,64 +79,70 @@ const loadPost = () => {
       post.value = data
       loading.value = false
     },
-    error: (err) => {
-      showMessage('Не удалось загрузить пост', 'error')
+    error: () => {
+      showMessage(message, messageType,'Не удалось загрузить пост', 'error')
       loading.value = false
     }
   })
   subscriptions.add(sub)
 }
 
-const validateCommentUserInfo = () => {
-  if (newComment.value.userInfo && newComment.value.userInfo.length > 50) {
-    commentErrors.value.userInfo = 'Имя не должно превышать 50 символов'
-    return false
+const savePostEdit = () => {
+  if (!editForm.value.title || !editForm.value.briefDescription || !editForm.value.fullDescription) {
+    showMessage(message, messageType,'Заполните все поля', 'error')
+    return
   }
-  commentErrors.value.userInfo = ''
-  return true
+
+  const sub = editPost({
+    id: postId.value,
+    title: editForm.value.title,
+    briefDescription: editForm.value.briefDescription,
+    fullDescription: editForm.value.fullDescription
+  }).subscribe({
+    next: () => {
+      showMessage(message, messageType,'Пост успешно обновлён!', 'success')
+      closeEditForm()
+      loadPost()
+    },
+    error: (err) => {
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось обновить пост'}`, 'error')
+    }
+  })
+
+  subscriptions.add(sub)
 }
 
-// Валидация email
-const validateCommentEmail = () => {
-  if (!newComment.value.email) {
-    commentErrors.value.email = 'Email обязателен'
-    return false
-  }
-  if (newComment.value.email.length > 50) {
-    commentErrors.value.email = 'Email не должен превышать 50 символов'
-    return false
-  }
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(newComment.value.email)) {
-    commentErrors.value.email = 'Введите корректный email'
-    return false
-  }
-  commentErrors.value.email = ''
-  return true
+const deletePost = async () => {
+  const confirmed = await confirmModal.value?.open(
+      'Подтверждение удаления',
+      'Вы уверены, что хотите удалить этот пост? Это действие нельзя отменить.'
+  )
+
+  if (!confirmed) return
+
+  deleting.value = true
+  const sub = deletePostById(postId.value).subscribe({
+    next: () => {
+      showMessage(message, messageType,'Пост успешно удалён!', 'success')
+      setTimeout(() => {
+        router.push('/')
+      }, 1000)
+    },
+    error: (err) => {
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось удалить пост'}`, 'error')
+      deleting.value = false
+    }
+  })
+  subscriptions.add(sub)
 }
 
-// Валидация текста комментария
-const validateCommentText = () => {
-  if (!newComment.value.textComment) {
-    commentErrors.value.textComment = 'Текст комментария обязателен'
-    return false
-  }
-  if (newComment.value.textComment.length > 255) {
-    commentErrors.value.textComment = 'Текст комментария не должен превышать 255 символов'
-    return false
-  }
-  commentErrors.value.textComment = ''
-  return true
-}
-
-// Добавление комментария
 const addComment = () => {
-  const isUserInfoValid = validateCommentUserInfo()
-  const isEmailValid = validateCommentEmail()
-  const isTextValid = validateCommentText()
+  const isUserInfoValid = validateCommentUserInfoField()
+  const isEmailValid = validateCommentEmailField()
+  const isTextValid = validateCommentTextField()
 
   if (!isUserInfoValid || !isEmailValid || !isTextValid) {
-    showMessage('Пожалуйста, исправьте ошибки в форме', 'error')
+    showMessage(message, messageType,'Пожалуйста, исправьте ошибки в форме', 'error')
     return
   }
 
@@ -170,7 +156,7 @@ const addComment = () => {
 
   const sub = createComment(postId.value, commentData).subscribe({
     next: () => {
-      showMessage('Комментарий успешно добавлен!', 'success')
+      showMessage(message, messageType,'Комментарий успешно добавлен!', 'success')
       newComment.value = {
         email: '',
         textComment: '',
@@ -180,7 +166,7 @@ const addComment = () => {
       submitting.value = false
     },
     error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось добавить комментарий'}`, 'error')
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось добавить комментарий'}`, 'error')
       submitting.value = false
     }
   })
@@ -188,26 +174,29 @@ const addComment = () => {
   subscriptions.add(sub)
 }
 
-// Удаление комментария
-const deleteComment = (commentId: number) => {
-  if (!confirm('Вы уверены, что хотите удалить этот комментарий? Это действие нельзя отменить.')) return
+const deleteComment = async (commentId: number) => {
+  const confirmed = await confirmModal.value?.open(
+      'Подтверждение удаления',
+      'Вы уверены, что хотите удалить этот комментарий? Это действие нельзя отменить.'
+  )
+
+  if (!confirmed) return
 
   deletingCommentId.value = commentId
   const sub = deleteCommentById(commentId).subscribe({
     next: () => {
-      showMessage('Комментарий успешно удалён!', 'success')
-      loadPost() // Перезагружаем пост, чтобы обновить список комментариев
+      showMessage(message, messageType,'Комментарий успешно удалён!', 'success')
+      loadPost()
       deletingCommentId.value = null
     },
     error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось удалить комментарий'}`, 'error')
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось удалить комментарий'}`, 'error')
       deletingCommentId.value = null
     }
   })
   subscriptions.add(sub)
 }
 
-// Открыть форму редактирования
 const openEditForm = () => {
   if (post.value) {
     editForm.value = {
@@ -219,7 +208,6 @@ const openEditForm = () => {
   }
 }
 
-// Закрыть форму редактирования
 const closeEditForm = () => {
   editing.value = false
   editForm.value = {
@@ -229,52 +217,11 @@ const closeEditForm = () => {
   }
 }
 
-// Сохранить изменения поста
-const savePostEdit = () => {
-  if (!editForm.value.title || !editForm.value.briefDescription || !editForm.value.fullDescription) {
-    showMessage('Заполните все поля', 'error')
-    return
+watch(users, (newUsers) => {
+  if (post.value?.userInfoId && !newUsers.find(u => u.id === post.value?.userInfoId)) {
+    router.push('/')
   }
-
-  const sub = editPost({
-    id: postId.value,
-    title: editForm.value.title,
-    briefDescription: editForm.value.briefDescription,
-    fullDescription: editForm.value.fullDescription
-  }).subscribe({
-    next: () => {
-      showMessage('Пост успешно обновлён!', 'success')
-      closeEditForm()
-      loadPost()
-    },
-    error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось обновить пост'}`, 'error')
-    }
-  })
-
-  subscriptions.add(sub)
-}
-
-// Удалить пост
-const deletePost = () => {
-  if (!confirm('Вы уверены, что хотите удалить этот пост? Это действие нельзя отменить.')) return
-
-  deleting.value = true
-  const sub = deletePostById(postId.value).subscribe({
-    next: () => {
-      showMessage('Пост успешно удалён!', 'success')
-      setTimeout(() => {
-        router.push('/')
-      }, 1000)
-    },
-    error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось удалить пост'}`, 'error')
-      deleting.value = false
-    }
-  })
-
-  subscriptions.add(sub)
-}
+}, { deep: true })
 
 onMounted(() => {
   loadPost()
@@ -307,7 +254,6 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="post-section">
-      <!-- Кнопки управления -->
       <div class="action-buttons">
         <button class="edit-btn" @click="openEditForm" :disabled="editing">
           ✏️ Редактировать
@@ -317,7 +263,6 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- Режим редактирования -->
       <div v-if="editing" class="edit-section">
         <h2>✏️ Редактирование поста</h2>
         <form @submit.prevent="savePostEdit" class="edit-form">
@@ -361,7 +306,6 @@ onUnmounted(() => {
         </form>
       </div>
 
-      <!-- Просмотр поста -->
       <div v-else>
         <h1 class="post-title">{{ post.title }}</h1>
 
@@ -380,7 +324,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Комментарии (показываются всегда) -->
       <div class="comments-section">
         <h2>💬 Комментарии ({{ post.comments?.length || 0 }})</h2>
 
@@ -413,7 +356,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Форма добавления комментария -->
       <div class="add-comment-section">
         <h2>📝 Добавить комментарий</h2>
         <form @submit.prevent="addComment" class="add-comment-form">
@@ -460,6 +402,7 @@ onUnmounted(() => {
     <div v-if="message" :class="['message', messageType]">
       {{ message }}
     </div>
+    <ConfirmModal ref="confirmModal" />
   </div>
 </template>
 

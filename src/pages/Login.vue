@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginRequest } from '@/service-api/api-auth.ts'
 import { setToken } from '@/service/auth'
-import { Subscription } from 'rxjs'
+import { finalize } from 'rxjs'
 
 const router = useRouter()
 
@@ -11,8 +11,6 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
-
-let subscription: Subscription | null = null
 
 const submit = () => {
   if (!username.value || !password.value) {
@@ -23,37 +21,37 @@ const submit = () => {
   loading.value = true
   errorMessage.value = ''
 
-  if (subscription) {
-    subscription.unsubscribe()
-  }
+  loginRequest(username.value, password.value)
+      .pipe(
+          finalize(() => {
+            loading.value = false
+          })
+      )
+      .subscribe({
+        next: (response) => {
+          if (response?.data && typeof response.data === 'object') {
+            const keys = Object.keys(response.data)
+            if (keys.length > 0) {
+              const firstKey = keys[0]!
+              const token = response.data[firstKey]
 
-  subscription = loginRequest(username.value, password.value).subscribe({
-    next: (response) => {
-      if (response?.data && typeof response.data === 'object') {
-        const keys = Object.keys(response.data)
-        if (keys.length > 0) {
-          const firstKey = keys[0]!
-          const token = response.data[firstKey]
-
-          if (token) {
-            setToken(token)
-            router.push({ name: 'Home' })
+              if (token) {
+                setToken(token)
+                router.push({ name: 'Home' })
+              } else {
+                errorMessage.value = 'Токен не получен'
+              }
+            } else {
+              errorMessage.value = 'Пустой ответ от сервера'
+            }
           } else {
-            errorMessage.value = 'Токен не получен'
+            errorMessage.value = 'Неверный формат ответа от сервера'
           }
-        } else {
-          errorMessage.value = 'Пустой ответ от сервера'
+        },
+        error: (error: any) => {
+          errorMessage.value = error?.response?.data?.message || 'Ошибка входа'
         }
-      } else {
-        errorMessage.value = 'Неверный формат ответа от сервера'
-      }
-      loading.value = false
-    },
-    error: (error: any) => {
-      errorMessage.value = error?.response?.data?.message || 'Ошибка входа'
-      loading.value = false
-    }
-  })
+      })
 }
 </script>
 
