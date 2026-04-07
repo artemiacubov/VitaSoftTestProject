@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { createUser, deleteUserById } from '@/service-api/api'
+import { showMessage } from "@/service/helpers.ts";
 import { Subscription } from 'rxjs'
 import { useUsers } from '@/composables/useUsers'
 import ConfirmModal from '@/pages/modals/ConfirmModal.vue'
@@ -25,12 +26,6 @@ const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768
 }
 
-const showMessage = (text: string, type: 'success' | 'error') => {
-  message.value = text
-  messageType.value = type
-  setTimeout(() => { if (message.value === text) message.value = '' }, 3000)
-}
-
 const goToUserDetail = (userId: number) => {
   router.push(`/user/${userId}`)
   if (isMobile.value) {
@@ -40,20 +35,20 @@ const goToUserDetail = (userId: number) => {
 
 const addUser = () => {
   if (!newUser.value.blogName && !newUser.value.fullName) {
-    showMessage('Заполните хотя бы одно поле', 'error')
+    showMessage(message, messageType,'Заполните хотя бы одно поле', 'error')
     return
   }
 
   loading.value = true
   const sub = createUser(newUser.value).subscribe({
     next: () => {
-      showMessage('Пользователь успешно создан', 'success')
+      showMessage(message, messageType,'Пользователь успешно создан', 'success')
       newUser.value = { blogName: '', fullName: '' }
       refreshUsers()
       loading.value = false
     },
     error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось создать пользователя'}`, 'error')
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось создать пользователя'}`, 'error')
       loading.value = false
     }
   })
@@ -71,12 +66,12 @@ const deleteUser = async (id: number) => {
   deletingIds.value.add(id)
   const sub = deleteUserById(id).subscribe({
     next: () => {
-      showMessage('Пользователь успешно удалён', 'success')
+      showMessage(message, messageType,'Пользователь успешно удалён', 'success')
       refreshUsers()
       deletingIds.value.delete(id)
     },
     error: (err) => {
-      showMessage(`Ошибка: ${err.message || 'Не удалось удалить пользователя'}`, 'error')
+      showMessage(message, messageType,`Ошибка: ${err.message || 'Не удалось удалить пользователя'}`, 'error')
       deletingIds.value.delete(id)
     }
   })
